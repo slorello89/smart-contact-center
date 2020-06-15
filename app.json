@@ -17,6 +17,18 @@
     },
     "NEXMO_APPLICATION_PRIVATE_KEY": {
         "description": "Application private key with \n replacing newlines"
+    },
+    "NEXMO_NUMBER": {
+      "description": "Find your account API key and secret on the dashboard https://dashboard.nexmo.com"
+    },
+    "WHATSAPP_PROXY_NUMBER": {
+        "description": "Find your account API key and secret on the dashboard https://dashboard.nexmo.com"
+    },
+    "VIBER_PROXY_NUMBER": {
+        "description": "Create an application in the dashboard and put its ID here"
+    },
+    "MESSENGER_PROXY": {
+        "description": "Application private key with \n replacing newlines"
     }
 
   }
