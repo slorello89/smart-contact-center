@@ -12,7 +12,7 @@
   <body>
     <div class="container">
       <div class="row">
-        <header><h1>WhatsApp Contact Center Dashboard</h1></header>
+        <header><h1>Contact Center Dashboard</h1></header>
       </div>
       <div class="row">
         <p class="error" style="color: red;">
@@ -35,6 +35,19 @@
             id="agentName"
             placeholder="Agent Name"
           />
+
+          <select 
+            name="agentChannel"
+            id="agentChannel"
+            placeholder="Agent Channel"
+          >
+            <option value="whatsapp">WhatsApp</option>
+            <option value="sms">SMS</option>            
+            <option value="messenger">Facebook Messenger</option>
+            <option value="viber">Viber</option>
+            <option value="voice">Voice</option>
+          </select>
+
           <input
             type="submit"
             id="addAgentButton"
@@ -53,6 +66,7 @@
                   <th>Agent Name</th>
                   <th>Agent Number</th>
                   <th>Availability</th>
+                  <th>Channel</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -68,6 +82,7 @@
                   <th>Agent Number</th>
                   <th>Customer Number</th>
                   <th>Emoji</th>
+                  <th>Channel</th>
                 </tr>
               </thead>
               <tbody></tbody>

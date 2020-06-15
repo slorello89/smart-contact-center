@@ -24,6 +24,8 @@ $.get('/getAgents', function (data) {
       element['number'] +
       '</td><td>' +
       element['availability'] +
+      '</td><td>' +
+      element['channel'] +
       '</td></tr>';
     $('#agentTable tbody').append(rowHtml);
   });
@@ -37,6 +39,8 @@ $.get('/getCustomers', function (data) {
       element['customerNumber'] +
       '</td><td>' +
       element['emoji'] +
+      '</td><td>' +
+      element['channel'] +
       '</td></tr>';
     $('#customersTable tbody').append(rowHtml);
   });
