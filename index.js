@@ -24,6 +24,12 @@ const nexmo = new Nexmo(
   }
 );
 
+redisClient.set("Channels:whatsapp",process.env.WHATSAPP_PROXY_NUMBER)
+redisClient.set("Channels:sms", process.env.NEXMO_NUMBER)
+redisClient.set("Channels:voice", process.env.NEXMO_NUMBER)
+redisClient.set("Channels:viber_service_msg", process.env.VIBER_PROXY_NUMBER)
+redisClient.set("Channels:messenger", process.env.MESSENGER_PROXY)
+
 const CUSTOMERS = '_customers';
 
 const emojis = ['🏠', '🍎', '🥑', '🌳', '🎪', '🌈'];
@@ -85,6 +91,20 @@ async function getAgentChannel(agentNum){
     });
   return ret['agentChannel'];
 }
+
+async function getCustomerChannel(customerNumber){
+  ret = {}
+  await redisClient
+    .hgetallAsync('customers:'+customerNumber)
+    .then(function(customer){
+      ret = customer;
+    })
+    .catch(function(e){
+      console.log(e)
+    });
+  return ret['channel'];
+}
+
 async function getAgents(request, response) {
   let ret = [];
   let agents = [];
@@ -153,18 +173,24 @@ async function getCustomers(req, resp) {
  */
 function handleInbound(request, response) {
   var body = request.body;
-  let fromNumber = body['from']['number'];
+  let fromNumber = body['from']['number'];  
+  let toNumber = body['to']['number'];
+  if(!fromNumber){
+    fromNumber= body['from']['id']    
+  }
+  if(!toNumber){
+    toNumber= body['to']['id']
+  }
+  let channel = body['from']['type'];
+  let msgText = body['message']['content']['text'];
   redisClient.hgetall('agents:' + fromNumber, (err, agent) => {
     if (err) {
       console.log(err);
     } else {
       if (agent) {
-        handleInboundFromAgent(body);
+        handleInboundFromAgent(msgText, toNumber, fromNumber, channel);
       } else {
-        let fromNumber = body['from']['number'];
-        let toNumber = body['to']['number'];
-        let channel = body['from']['type'];
-        let msgText = body['message']['content']['text'];
+        
         handleInboundFromCustomer(fromNumber, toNumber, channel, msgText);
       }
     }
@@ -174,7 +200,8 @@ function handleInbound(request, response) {
   response.status(204).send();
 }
 
-function handleInboundSms(messageBody){
+function handleInboundSms(request, response){
+  response.status(204).send();
   var body = request.body;
   let fromNumber = body['msisdn'];
   let toNumber = body['to'];
@@ -186,6 +213,7 @@ function handleInboundSms(messageBody){
     }
     else{
       if(agent){
+        handleInboundFromAgent(msgText,toNumber,fromNumber,channel)
 
       } else{
         handleInboundFromCustomer(fromNumber, toNumber, channel, msgText);
@@ -195,8 +223,6 @@ function handleInboundSms(messageBody){
 
   const params = Object.assign(request.query, request.body);
   console.log(params);
-  response.status(204).send();
-
 }
 
 /**
@@ -204,10 +230,7 @@ function handleInboundSms(messageBody){
  * Sends the customer's message to the agent with prepended emoji
  * @param {Body of the incoming http message to the webhook} messageBody string
  */
-async function handleInboundFromCustomer(fromNumber, toNumber, channel, msgText) {
-  // let fromNumber = messageBody['from']['number'];
-  // let toNumber = messageBody['to']['number'];
-  // let channel = messageBody['from']['type'];
+function handleInboundFromCustomer(fromNumber, toNumber, channel, msgText) {
   let content = {type:'text',text:msgText};
   let agentNumber = '';
   let emoji = '';
@@ -286,44 +309,36 @@ async function handleInboundFromCustomer(fromNumber, toNumber, channel, msgText)
  *  3:'sign out' - calls signOut
  * @param {this is the body from the inbound whatsApp message} messageBody
  */
-function handleInboundFromAgent(messageBody, msgText, to, from, channel) {
-  let msgText = messageBody['message']['content']['text'];
+function handleInboundFromAgent(msgText, to, from, channel) {  
+  let message = {
+    type: 'text',
+    text: msgText,
+  };
   if (msgText.toLowerCase().indexOf('sign in') >= 0) {
-    handleSignIn(messageBody['from']['number'], messageBody['to']['number']);
+    handleSignIn(from, to, channel);
   } else if (msgText.toLowerCase().indexOf('sign out') >= 0) {
-    handleSignOut(messageBody['from']['number'], messageBody['to']['number']);
+    handleSignOut(from, to, channel);
   } else {
     var charPoint = parseInt(msgText.codePointAt(0).toString('16'), 16);
     var emoji = String.fromCodePoint(charPoint);
 
-    messageBody['message']['content']['text'] = messageBody['message'][
-      'content'
-    ]['text']
-      .substring(2)
-      .trim();
-    redisClient.get(messageBody['from']['number'] + emoji, (err, number) => {
+    message['text'] = msgText.substring(2).trim();
+    redisClient.get(from + emoji, async (err, number) => {
       if (err) {
         console.log(err);
       } else {
         // check if agent is associated with the emoji in question, tell them to check their emoji if not
         if (number) {
-          sendMessage(
-            messageBody['to']['number'],
-            number,
-            messageBody['message']['content']
-          );
+          customerChannel = await getCustomerChannel(number)
+          sendMessage(to, number, message, customerChannel);
         } else {
           console.log('number not found for ' + emoji);
-          var message = {
+          message = {
             type: 'text',
             text:
               'please check your message has the correct emoji at the start',
           };
-          sendMessage(
-            messageBody['to']['number'],
-            messageBody['from']['number'],
-            message
-          );
+          sendMessage(to, from, message, channel);
           return;
         }
       }
@@ -335,7 +350,7 @@ function handleInboundFromAgent(messageBody, msgText, to, from, channel) {
 Checks if agent is already available, if they are, then it tells the agent they've 
 already signed in, if not it sets agent's status to available
 */
-function handleSignIn(agentNumber, proxyNumber) {
+function handleSignIn(agentNumber, proxyNumber, channel) {
   let message = {
     type: 'text',
     text: 'something went wrong while signing you in',
@@ -358,7 +373,7 @@ function handleSignIn(agentNumber, proxyNumber) {
         message = { type: 'text', text: 'You were already signed in' };
       }
     }
-    sendMessage(proxyNumber, agentNumber, message);
+    sendMessage(proxyNumber, agentNumber, message, channel);
   });
 }
 
@@ -383,7 +398,7 @@ function handleSignOut(agentNumber, from) {
     type: 'text',
     text: 'You have been signed out. Thanks for your hard work!',
   };
-  sendMessage(from, agentNumber, message);
+  sendMessage(from, agentNumber, message, channel);
 }
 
 function reassignAgent(customerNumber) {
@@ -448,20 +463,76 @@ function reassignAgent(customerNumber) {
 }
 
 function sendMessage(from, to, message, channel='whatsapp') {
-  nexmo.channel.send(
-    { type: channel, number: to },
-    { type: channel, number: from },
-    {
-      content: message,
-    },
-    (err, data) => {
-      if (err) {
-        console.error(err);
-      } else {
-        console.log(data.message_uuid);
+  let client = nexmo;
+  if (channel == 'sms' || channel =='voice' )
+  {
+    client = new Nexmo(
+      {
+        apiKey: process.env.NEXMO_API_KEY,
+        apiSecret: process.env.NEXMO_API_SECRET,
+        applicationId: process.env.NEXMO_APPLICATION_ID,
+        privateKey: Buffer.from(
+          process.env.NEXMO_APPLICATION_PRIVATE_KEY.replace(/\\n/g, '\n'),
+          'utf-8'
+        ),
+      },      
+    );
+  }
+  redisClient.get("Channels:"+channel,(err, proxy)=>{
+    if(err){
+      console.log(err);
+    }
+    else{
+      if(channel == 'whatsapp' || channel == 'sms' ){
+        client.channel.send(
+          { type: channel, number: to },
+          { type: channel, number: proxy },
+          {
+            content: message,
+          },
+          (err, data) => {
+            if (err) {
+              console.error(err);
+            } else {
+              console.log(data.message_uuid);
+            }
+          }
+        );
+      }
+      else if(channel='viber_service_msg'){
+        client.channel.send(
+          { type: channel, number: to },
+          { type: channel, id: proxy },
+          {
+            content: message,
+          },
+          (err, data) => {
+            if (err) {
+              console.error(err);
+            } else {
+              console.log(data.message_uuid);
+            }
+          }
+        );
+      }
+      else{
+        client.channel.send(
+          { type: channel, id: to },
+          { type: channel, id: proxy },
+          {
+            content: message,
+          },
+          (err, data) => {
+            if (err) {
+              console.error(err);
+            } else {
+              console.log(data.message_uuid);
+            }
+          }
+        );
       }
     }
-  );
+  })  
 }
 
 function handleStatus(request, response) {
