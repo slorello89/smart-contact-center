@@ -19,17 +19,30 @@
         "description": "Application private key with \n replacing newlines"
     },
     "NEXMO_NUMBER": {
-      "description": "Find your account API key and secret on the dashboard https://dashboard.nexmo.com"
+      "description": "Proxy Nexmo Number"
     },
     "WHATSAPP_PROXY_NUMBER": {
-        "description": "Find your account API key and secret on the dashboard https://dashboard.nexmo.com"
+        "description": "Proxy Number for WhatsApp"
     },
     "VIBER_PROXY_NUMBER": {
-        "description": "Create an application in the dashboard and put its ID here"
+        "description": "Proxy Id for Viber"
     },
     "MESSENGER_PROXY": {
-        "description": "Application private key with \n replacing newlines"
+        "description": "Proxy id for messenger"
+    },
+    "MODEL_ID": {
+      "description": "Athena API Model ID"
+    },
+    "OVERAI_HOST": {
+        "description": "Host Name for Athena API"
+    },
+    "HOST": {
+      "description": "Your site's host"
+    },
+    "SCHEME": {
+        "description": "Scheme of your site e.g. http"
     }
+    
 
   }
 }

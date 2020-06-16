@@ -10,7 +10,7 @@
   </head>
 
   <body>
-    <div class="container">
+    <div class="container" style="max-width: 1100px;">
       <div class="row">
         <header><h1>Contact Center Dashboard</h1></header>
       </div>
@@ -44,12 +44,20 @@
             <option value="whatsapp">WhatsApp</option>
             <option value="sms">SMS</option>            
             <option value="messenger">Facebook Messenger</option>
-            <option value="viber">Viber</option>
+            <option value="viber_service_msg">Viber</option>
             <option value="voice">Voice</option>
           </select>
-
+          <select
+            name="specialty"
+            id="specialty"
+            placeholder="Agent Specialty"
+          >
+            <option value="technicalSupport">Technical Support</option>
+            <option value="sales">Sales</option>
+            <option value="finance">Finance</option>
+          </select>
           <input
-            type="submit"
+            type="submit" 
             id="addAgentButton"
             class="button-primary"
             value="Add Agent"
@@ -65,8 +73,9 @@
                 <tr>
                   <th>Agent Name</th>
                   <th>Agent Number</th>
+                  <th>Specialty</th>
                   <th>Availability</th>
-                  <th>Channel</th>
+                  <th>Channel</th>                  
                 </tr>
               </thead>
               <tbody></tbody>
@@ -83,6 +92,7 @@
                   <th>Customer Number</th>
                   <th>Emoji</th>
                   <th>Channel</th>
+                  <th>Specialty Needed</th>
                 </tr>
               </thead>
               <tbody></tbody>

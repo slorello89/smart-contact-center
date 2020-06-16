@@ -23,6 +23,8 @@ $.get('/getAgents', function (data) {
       '</td><td>' +
       element['number'] +
       '</td><td>' +
+      element['specialty'] +
+      '</td><td>' +
       element['availability'] +
       '</td><td>' +
       element['channel'] +
@@ -41,6 +43,8 @@ $.get('/getCustomers', function (data) {
       element['emoji'] +
       '</td><td>' +
       element['channel'] +
+      '</td><td>' +
+      element['specialty'] +
       '</td></tr>';
     $('#customersTable tbody').append(rowHtml);
   });

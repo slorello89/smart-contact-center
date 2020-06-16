@@ -4,6 +4,10 @@ const bodyParser = require('body-parser');
 const Nexmo = require('nexmo');
 const path = require('path');
 const redis = bluebird.promisifyAll(require('redis'));
+const http = require('http')
+const requestLib = require('request')
+var os = require('os');
+const { text } = require('body-parser');
 require('dotenv').config();
 const PORT = process.env.PORT || 5001;
 const redisClient = bluebird.promisifyAll(
@@ -54,26 +58,92 @@ app.route('/webhooks/msg-event').get(handleStatus).post(handleStatus);
 
 app.route('/webhooks/inbound-sms').get(handleInboundSms).post(handleInboundSms);
 
+app.route('/webhooks/answer').get(handleAnswer);
+
+app.route('/webhooks/asr-init').post(handleAsrInit);
+
+app.route('/webhooks/asr').post(handleAsr);
+
+app.route('/webhooks/events').post(handleEvent);
+
 app.route('/addAgent').post(addAgent);
 
 app.route('/getAgents').get(getAgents);
 
 app.route('/getCustomers').get(getCustomers);
 
+function handleEvent(request, response){
+  response.status(204).send();
+}
+
+function handleAsr(request, response){
+  response.status(204).send();
+}
+
+function handleAsrInit(request, response){  
+  const params = Object.assign(request.query, request.body);
+  console.log(params);
+  let fromNumber = params['uuid'];
+  let msgText = params['speech']['results'][0].text;
+  let channel = 'voice';
+  let toNumber = params['toNumber'];
+  let customerInfo = {from:fromNumber, to:toNumber, msgText:msgText, channel:channel}
+
+  handleAnalyze(msgText,postAnalyze,customerInfo);
+  let ncco = [
+    {
+      action: 'talk',
+      text: 'Please wait to be connected to an agent'
+    },
+    {
+      action: 'conversation',
+      name: params['uuid']
+    }]
+  response.json(ncco);
+}
+
+function handleAnswer(request, response){
+  const params = Object.assign(request.query, request.body);
+  console.log(params);
+  const ncco = [{
+    action: 'talk',
+    text: 'Hello, welcome to the customer service hotline - can you please provide a brief description of what you need?',
+  },
+  {
+    action: 'input',
+    eventUrl: [`${request.protocol}://${request.get('host')}/webhooks/asr-init?fromNumber=${params['from']}&toNumber=${params['to']}`],
+    speech: {
+      endOnSilence: 1,
+      language: "en-US",
+      uuid: [request.query.uuid]
+    }
+  }
+  ]
+  response.json(ncco)
+}
+
 function addAgent(request, response) {
   let agentName = request.body['agentName'];
   let agentNumber = request.body['agentNum'];
   let agentChannel = request.body['agentChannel'];
+  let agentSpecialty = request.body['specialty']
+  let availability = 'unavailable';  
   redisClient.hmset(
     'agents:' + agentNumber,
     'agentName',
     agentName,
     'availability',
-    'unavailable',
+    availability,
     'agentNumber',
     agentNumber,
     'agentChannel',
-    agentChannel
+    agentChannel,
+    'specialty',
+    agentSpecialty, 
+    function(err, res){
+      if(agentChannel == 'voice')
+        handleSignIn(agentNumber,'','voice');
+    }
   );
   const params = Object.assign(request.query, request.body);
   console.log(params);
@@ -127,7 +197,8 @@ async function getAgents(request, response) {
           name: agent['agentName'],
           availability: agent['availability'],
           number: agent['agentNumber'].replace(/.(?=.{3,}$)/g, '*'),
-          channel: agent['agentChannel']
+          channel: agent['agentChannel'],
+          specialty: agent['specialty']
         });
       })
       .catch(function (e) {
@@ -157,7 +228,8 @@ async function getCustomers(req, resp) {
           assignedAgentNum: customer['agentNum'].replace(/.(?=.{3,}$)/g, '*'),
           emoji: customer['emoji'],
           customerNumber: entry.split(':')[1].replace(/.(?=.{3,}$)/g, '*'),
-          channel: customer['channel']
+          channel: customer['channel'],
+          specialty: customer['specialty']
         });
       }
     });
@@ -172,6 +244,9 @@ async function getCustomers(req, resp) {
  * @param {response to be sent back to the webhook} response
  */
 function handleInbound(request, response) {
+  const params = Object.assign(request.query, request.body);
+  console.log(params);
+  response.status(204).send();
   var body = request.body;
   let fromNumber = body['from']['number'];  
   let toNumber = body['to']['number'];
@@ -182,7 +257,7 @@ function handleInbound(request, response) {
     toNumber= body['to']['id']
   }
   let channel = body['from']['type'];
-  let msgText = body['message']['content']['text'];
+  let msgText = body['message']['content']['text'];  
   redisClient.hgetall('agents:' + fromNumber, (err, agent) => {
     if (err) {
       console.log(err);
@@ -194,10 +269,7 @@ function handleInbound(request, response) {
         handleInboundFromCustomer(fromNumber, toNumber, channel, msgText);
       }
     }
-  });
-  const params = Object.assign(request.query, request.body);
-  console.log(params);
-  response.status(204).send();
+  });  
 }
 
 function handleInboundSms(request, response){
@@ -225,6 +297,112 @@ function handleInboundSms(request, response){
   console.log(params);
 }
 
+function postAnalyze(topIntent, customerInfo){  
+  message = {type:'text', text:'Could you provide a brief description of what you need?'}
+  fromNumber = customerInfo['from'];
+  toNumber = customerInfo['to'];
+  channel = customerInfo['channel']
+  msgText = customerInfo['msgText']
+  if(topIntent['name'] =='sys.default'){    
+    sendMessage('', fromNumber, message, channel)
+  }
+  else{
+    redisClient.spop('available_'+topIntent['name'], async(err,reply)=>{
+      if(err){
+        console.log(err);
+      }
+      else{        
+        if(reply){
+          var charPoint = parseInt(
+            reply.codePointAt(reply.length - 2).toString('16'),
+            16
+          );
+          agentNumber = reply.substring(0, reply.length - 2);
+          var emoji = String.fromCodePoint(charPoint);
+          redisClient.hmset(
+            'customers:' + fromNumber,
+            'proxyNumber',
+            toNumber,
+            'agent',
+            reply,
+            'emoji',
+            emoji,
+            'agentNum',
+            agentNumber,
+            'channel',
+            channel,
+            'specialty',
+            topIntent['name']
+          );
+          redisClient.sadd(agentNumber + CUSTOMERS, fromNumber);
+          redisClient.set(reply, fromNumber);
+          console.log('***REPLY**: ' + reply);
+          message['text'] =
+            emoji + ' - ' + msgText;
+          let agentChannel = await getAgentChannel(agentNumber)
+          if(agentChannel == 'voice' && channel == "voice" ){
+            client = new Nexmo(
+              {
+                apiKey: process.env.NEXMO_API_KEY,
+                apiSecret: process.env.NEXMO_API_SECRET,
+                applicationId: process.env.NEXMO_APPLICATION_ID,
+                privateKey: Buffer.from(
+                  process.env.NEXMO_APPLICATION_PRIVATE_KEY.replace(/\\n/g, '\n'),
+                  'utf-8'
+                ),
+              },      
+            );
+            client.calls.create({
+              to: [{
+                type: 'phone',
+                number: agentNumber
+              }],
+              from: {
+                type: 'phone',
+                number: process.env.NEXMO_NUMBER
+              },
+              ncco: [{
+                "action": "conversation",
+                "name": fromNumber
+              }]
+            }, (error, response) => {
+              if (error) console.error(error)
+              if (response) console.log(response)
+            })
+            // nexmo.calls.update(fromNumber,{
+            //   action: 'transfer',
+            //   destination: {
+            //     'type':'ncco',
+            //     'ncco' : [
+            //       {
+            //         action:'connect',
+            //         from: process.env.NEXMO_NUMBER,
+            //         endpoint: [{
+            //           type:'phone',
+            //           number: agentNumber
+            //         }]
+            //       }
+            //     ]
+            //   }
+            // });
+          }
+          else{
+            sendMessage(
+              toNumber,
+              agentNumber,
+              message,
+              agentChannel
+            );
+          }
+          
+        }else {
+          message['text'] = "We're sorry, no agents are available at this time. Please try again later";
+          sendMessage(toNumber, fromNumber, message, channel);
+        }
+      }
+    });
+  }
+}
 /**
  * Creates a customer if we don't already have a record for the incoming number.
  * Sends the customer's message to the agent with prepended emoji
@@ -239,53 +417,7 @@ function handleInboundFromCustomer(fromNumber, toNumber, channel, msgText) {
       console.log(err);
     } else {
       if (!user || user['agent'] == '') {
-        redisClient.spop('available', async (err, reply) => {
-          if (err) {
-            console.log(err);
-          }
-          if (reply) {
-            var charPoint = parseInt(
-              reply.codePointAt(reply.length - 2).toString('16'),
-              16
-            );
-            agentNumber = reply.substring(0, reply.length - 2);
-            var emoji = String.fromCodePoint(charPoint);
-
-            redisClient.hmset(
-              'customers:' + fromNumber,
-              'proxyNumber',
-              toNumber,
-              'agent',
-              reply,
-              'emoji',
-              emoji,
-              'agentNum',
-              agentNumber,
-              'channel',
-              channel
-            );
-            redisClient.sadd(agentNumber + CUSTOMERS, fromNumber);
-            redisClient.set(reply, fromNumber);
-            console.log('***REPLY**: ' + reply);
-            content['text'] =
-              emoji + ' - ' + msgText;
-            let agentChannel = await getAgentChannel(agentNumber)
-            sendMessage(
-              toNumber,
-              agentNumber,
-              content,
-              agentChannel
-            );
-            
-          } else {
-            let message = {
-              type: 'text',
-              text:
-                "We're sorry, no agents are available at this time. Please try again later",
-            };
-            sendMessage(toNumber, fromNumber, message, channel);
-          }
-        });
+        handleAnalyze(msgText,postAnalyze,{from:fromNumber,to:toNumber, msgText:msgText, channel:channel})
       } else {
         content['text'] =
           user['emoji'] + ' - ' + msgText;
@@ -350,7 +482,7 @@ function handleInboundFromAgent(msgText, to, from, channel) {
 Checks if agent is already available, if they are, then it tells the agent they've 
 already signed in, if not it sets agent's status to available
 */
-function handleSignIn(agentNumber, proxyNumber, channel) {
+function handleSignIn(agentNumber, proxyNumber, channel) {  
   let message = {
     type: 'text',
     text: 'something went wrong while signing you in',
@@ -359,9 +491,14 @@ function handleSignIn(agentNumber, proxyNumber, channel) {
     if (err) {
       console.log(err);
     } else {
+      if (channel == 'voice'){
+        redisClient.sadd('available_'+reply['specialty'], agentNumber+emojis[0]);
+        redisClient.hset('agents:' + agentNumber, 'availability', 'available');
+        return;
+      }
       if (!reply || reply['availability'] == 'unavailable') {
         emojis.forEach((entry) => {
-          redisClient.sadd('available', agentNumber + entry);
+          redisClient.sadd('available_'+reply['specialty'], agentNumber + entry);
         });
         redisClient.hset('agents:' + agentNumber, 'availability', 'available');
         message = {
@@ -499,7 +636,7 @@ function sendMessage(from, to, message, channel='whatsapp') {
           }
         );
       }
-      else if(channel='viber_service_msg'){
+      else if(channel=='viber_service_msg'){
         client.channel.send(
           { type: channel, number: to },
           { type: channel, id: proxy },
@@ -514,6 +651,30 @@ function sendMessage(from, to, message, channel='whatsapp') {
             }
           }
         );
+      }
+      else if (channel == 'voice'){
+        let transferNcco = [{
+          action: 'talk',
+          text: message['text']
+          }];
+        if (message['text'] != "We're sorry, no agents are available at this time. Please try again later"){
+          transferNcco.push({
+            action: 'input',
+            eventUrl: [`${process.env.SCHEME}://${process.env.HOST}/webhooks/asr`],
+            speech:{
+              endOnSilence: 1,
+              language: "en-US",
+              uuid:to
+            }
+          });
+        }
+        client.calls.update(to,{
+          action:'transfer',
+          destination: {
+            type:'ncco',
+            ncco: transferNcco
+          }
+        })        
       }
       else{
         client.channel.send(
@@ -539,5 +700,53 @@ function handleStatus(request, response) {
   const params = Object.assign(request.query, request.body);
   console.log(params);
   response.status(204).send();
+}
+
+function handleAnalyze(text, callback, customerInfo){
+  let req_body = {
+    model_id:process.env.MODEL_ID,
+    text:text,
+    language_code: "en-US"
+  }
+  var username = process.env.NEXMO_API_KEY;
+  var password = process.env.NEXMO_API_SECRET;
+  var auth = 'Basic ' + Buffer.from(username + ':' + password).toString('base64');
+  options = {
+    host: process.env.OVERAI_HOST,
+    path: '/analyze',
+    method:'POST',
+    headers:{'x-original-client-ip-address':getIpAddress(), 'Authorization': auth}
+    }
+  let req = http.request(options,onAnalyze);
+  req.write(JSON.stringify(req_body));
+  req.on('response', response=>{
+    response.on('data',data=>{
+      var r = JSON.parse(data)
+      console.log(r['intents'][0]);
+      callback(r['intents'][0], customerInfo);
+    })
+    console.log(response);
+  })
+  req.end();  
+}
+
+function onAnalyze(response){
+  var str = ''
+  response.on('data', function (chunk) {
+    str += chunk;
+  });
+
+  response.on('end', function () {
+    console.log(str);
+  });
+}
+
+function getIpAddress(){
+  var address,
+    ifaces = require('os').networkInterfaces();
+    for (var dev in ifaces) {
+        ifaces[dev].filter((details) => details.family === 'IPv4' && details.internal === false ? address = details.address: undefined);
+    }
+  return address
 }
 app.listen(PORT, () => console.log(`Listening on ${PORT}`));
