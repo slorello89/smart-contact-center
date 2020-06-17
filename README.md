@@ -1,8 +1,10 @@
-# WhatsApp Demo For Text-Based Customer Service
+# Smart Contact Center
 
 <img src="https://developer.nexmo.com/assets/images/Vonage_Nexmo.svg" height="48px" alt="Nexmo is now known as Vonage" />
 
-This is a basic demo app routing user enquiries to customer service people, all via WhatsApp
+This application demonstrates a true, smart, omni-channel contact center solution using exculively Vonage technologies.
+
+This application leverages the Vonage Messages and Vonage Voice APIs to allow anything<->anything connectivity of agent's to users. It also leverages the Vonage AI Proof of Concept Athena to preform natural language understanding on incoming messages to determin which agent's to route to based off of their speciality.
 
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
 
@@ -43,9 +45,12 @@ If you'd prefer to do this yourself or change something, this is the basic setup
 
 > Note that all participants must first whitelist their numbers with the Messages Sandbox. You can [find more information about the Messages Sanbox on the Developer Portal](https://developer.nexmo.com/messages/concepts/messages-api-sandbox)
 
-* Your agent numbers can send the message "sign in" to the WhatsApp number, the WhatsApp number will respond back that they have signed in.
-* Your customer numbers will then message the same number with their questions or requests.
-* Customer messages will be forwarded to the appropriate agent with an emoji prepended to the message. This feature allows the agent to handle multiple conversations simultaneously in a single whatsapp conversation.
+* You must register your agent with the Portal by providing a number, name, channel, and speciality - supported channels are WhatsApp, Sms, Viber, Facebook Messenger, Voice. Supported specialities are sales, technical support, and finance
+* Your agent numbers can send the message "sign in" to their channels number/page, the number/page will respond back that they have signed in.
+* Your customer numbers will then message or call their channel's number/page with their questions or requests.
+* The application will then prmompt the customer for a brief problem description.
+* The customer will write or speak to the endpoint describing what they need
+* Customer messages will be routed to the appropriate agent with an emoji prepended to the message (if the channel is not voice). This feature allows the agent to handle multiple conversations simultaneously in a single number/page conversation.
 * Agents respond to the WhatsApp conversation, with the appropriate emoji at the beginning of their message and the message will be routed to the correct cuser
 * If the Agent sends a "sign out" message, their customers will be reallocated to available agents. If there are no available agents then the customer will be notified that there are no available agents.
 
